@@ -1,0 +1,23 @@
+{
+  "name": "moldmind",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "dev:web": "cd apps/web && pnpm dev",
+    "dev:api": "cd apps/api && uvicorn src.main:app --reload",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "db:migrate": "docker compose exec postgres psql -U moldmind -d moldmind -f /docker-entrypoint-initdb.d/001_initial_schema.sql",
+    "db:seed": "docker compose exec -T postgres psql -U moldmind -d moldmind < db/seeds/materials.sql"
+  },
+  "devDependencies": {
+    "turbo": "^1.12.0"
+  },
+  "packageManager": "pnpm@8.14.0"
+}

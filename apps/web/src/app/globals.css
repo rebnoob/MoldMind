@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #171717;
+  --background: #ffffff;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 3D viewer container */
+.viewer-container {
+  @apply w-full h-full min-h-[400px] bg-gray-50 rounded-lg border border-gray-200;
+}
+
+/* Severity badges */
+.badge-critical { @apply bg-red-100 text-red-800 border-red-200; }
+.badge-warning { @apply bg-amber-100 text-amber-800 border-amber-200; }
+.badge-info { @apply bg-blue-100 text-blue-800 border-blue-200; }
