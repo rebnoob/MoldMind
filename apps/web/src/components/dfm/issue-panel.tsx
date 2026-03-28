@@ -40,10 +40,12 @@ const SEVERITY_STYLES = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  draft: "Draft Angle",
-  thickness: "Wall Thickness",
+  draft: "Draft",
+  thickness: "Thickness",
   undercut: "Undercuts",
   geometry: "Geometry",
+  parting: "Parting Line",
+  rib_boss: "Ribs & Bosses",
   gate: "Gating",
   ejection: "Ejection",
   cooling: "Cooling",

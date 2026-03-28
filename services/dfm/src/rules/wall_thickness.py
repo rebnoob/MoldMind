@@ -1,20 +1,25 @@
-"""Wall thickness rules.
+"""Wall thickness checks — bulk-surface only.
 
-Two separate rules:
-1. WallThicknessRule: Checks min/max absolute thickness
-2. WallUniformityRule: Checks thickness variation (causes sink marks, warpage)
-
-Key DFM principles:
-- Too thin → short shots, flow hesitation
-- Too thick → sink marks, voids, long cycle time, warpage
-- Non-uniform → differential shrinkage → warpage
-- Rib thickness should be 50-75% of adjacent wall
+Filters thickness samples to major_wall and minor_wall faces.
+Fillets, transitions, and other minor geometry are excluded
+so they don't pollute min/max/variation metrics.
 """
 
+from collections import defaultdict
 from .base import DfmRule, DfmIssue, Severity, Category, AnalysisContext
+from ..dfm_config import DfmThresholds as T
+
+# Face classes considered "real walls" for thickness analysis
+_WALL_CLASSES = {"major_wall", "minor_wall"}
+
+
+def _wall_face_indices(context: AnalysisContext) -> set[int]:
+    """Return face indices that are major or minor walls."""
+    return {f.index for f in context.face_infos if f.face_class in _WALL_CLASSES}
 
 
 class WallThicknessRule(DfmRule):
+    """Check absolute wall thickness on major surfaces only."""
     rule_id = "wall_thickness"
     name = "Wall Thickness"
     category = Category.THICKNESS
@@ -23,61 +28,52 @@ class WallThicknessRule(DfmRule):
     def evaluate(self, context: AnalysisContext) -> list[DfmIssue]:
         issues = []
         ta = context.thickness_analysis
-
         if ta is None or not ta.samples:
+            return issues
+
+        wall_faces = _wall_face_indices(context)
+        # Filter samples to wall faces only
+        samples = [s for s in ta.samples if s.face_index in wall_faces]
+        if not samples:
             return issues
 
         mat = context.material
 
-        # Check minimum thickness
-        thin_samples = [s for s in ta.samples if s.thickness < mat.min_wall_thickness_mm]
-        if thin_samples:
-            min_t = min(s.thickness for s in thin_samples)
-            affected_faces = list(set(s.face_index for s in thin_samples))
+        thin = [s for s in samples if s.thickness < mat.min_wall_thickness_mm]
+        if thin:
+            min_t = min(s.thickness for s in thin)
+            faces = sorted(set(s.face_index for s in thin))
             issues.append(DfmIssue(
                 rule_id=self.rule_id,
                 severity=Severity.CRITICAL if min_t < mat.min_wall_thickness_mm * 0.5 else Severity.WARNING,
                 category=self.category,
-                title=f"Wall too thin ({min_t:.2f}mm)",
+                title=f"Thin wall ({min_t:.2f} mm)",
                 description=(
-                    f"Minimum wall thickness of {min_t:.2f}mm is below the "
-                    f"recommended minimum of {mat.min_wall_thickness_mm}mm for "
-                    f"{mat.name}. This may cause short shots, flow hesitation, "
-                    f"or incomplete filling."
+                    f"Min wall {min_t:.2f} mm on major surfaces < recommended "
+                    f"{mat.min_wall_thickness_mm} mm for {mat.name}."
                 ),
-                suggestion=(
-                    f"Increase wall thickness to at least {mat.min_wall_thickness_mm}mm. "
-                    f"If thin features are intentional (ribs, snap fits), ensure they are "
-                    f"within flow-length limits for the material."
-                ),
-                affected_faces=affected_faces,
+                suggestion=f"Increase to ≥ {mat.min_wall_thickness_mm} mm.",
+                affected_faces=faces,
                 measured_value=min_t,
                 threshold_value=mat.min_wall_thickness_mm,
                 unit="mm",
             ))
 
-        # Check maximum thickness
-        thick_samples = [s for s in ta.samples if s.thickness > mat.max_wall_thickness_mm]
-        if thick_samples:
-            max_t = max(s.thickness for s in thick_samples)
-            affected_faces = list(set(s.face_index for s in thick_samples))
+        thick = [s for s in samples if s.thickness > mat.max_wall_thickness_mm]
+        if thick:
+            max_t = max(s.thickness for s in thick)
+            faces = sorted(set(s.face_index for s in thick))
             issues.append(DfmIssue(
                 rule_id=self.rule_id,
                 severity=Severity.WARNING,
                 category=self.category,
-                title=f"Wall too thick ({max_t:.2f}mm)",
+                title=f"Thick wall ({max_t:.2f} mm)",
                 description=(
-                    f"Maximum wall thickness of {max_t:.2f}mm exceeds the "
-                    f"recommended maximum of {mat.max_wall_thickness_mm}mm for "
-                    f"{mat.name}. Thick walls cause sink marks, internal voids, "
-                    f"longer cycle times, and increased material cost."
+                    f"Max wall {max_t:.2f} mm on major surfaces > recommended "
+                    f"{mat.max_wall_thickness_mm} mm."
                 ),
-                suggestion=(
-                    f"Core out thick sections to achieve uniform {mat.min_wall_thickness_mm}-"
-                    f"{mat.max_wall_thickness_mm}mm walls. Use ribs for structural "
-                    f"strength instead of solid sections."
-                ),
-                affected_faces=affected_faces,
+                suggestion="Core out thick sections; use ribs for strength.",
+                affected_faces=faces,
                 measured_value=max_t,
                 threshold_value=mat.max_wall_thickness_mm,
                 unit="mm",
@@ -87,49 +83,108 @@ class WallThicknessRule(DfmRule):
 
 
 class WallUniformityRule(DfmRule):
+    """Check wall thickness variation across major surfaces only."""
     rule_id = "wall_uniformity"
-    name = "Wall Thickness Uniformity"
+    name = "Wall Uniformity"
     category = Category.THICKNESS
     weight = 1.5
-
-    VARIATION_WARNING_PCT = 25   # >25% variation
-    VARIATION_CRITICAL_PCT = 50  # >50% variation
 
     def evaluate(self, context: AnalysisContext) -> list[DfmIssue]:
         issues = []
         ta = context.thickness_analysis
-
-        if ta is None or not ta.samples or ta.mean_thickness == 0:
+        if ta is None or not ta.samples:
             return issues
 
-        variation = ta.variation_pct
+        wall_faces = _wall_face_indices(context)
+        samples = [s for s in ta.samples if s.face_index in wall_faces]
+        thicknesses = [s.thickness for s in samples if s.thickness > 0]
+        if len(thicknesses) < 3:
+            return issues
 
-        if variation > self.VARIATION_CRITICAL_PCT:
-            severity = Severity.CRITICAL
-        elif variation > self.VARIATION_WARNING_PCT:
-            severity = Severity.WARNING
-        else:
-            return issues  # Uniformity is acceptable
+        import numpy as np
+        min_t = min(thicknesses)
+        max_t = max(thicknesses)
+        mean_t = float(np.mean(thicknesses))
+        if mean_t == 0:
+            return issues
+
+        var = (max_t - min_t) / mean_t * 100
+        if var < T.WALL_VARIATION_WARNING_PCT:
+            return issues
+
+        severity = Severity.CRITICAL if var > T.WALL_VARIATION_CRITICAL_PCT else Severity.WARNING
 
         issues.append(DfmIssue(
             rule_id=self.rule_id,
             severity=severity,
             category=self.category,
-            title=f"Non-uniform wall thickness ({variation:.0f}% variation)",
+            title=f"Non-uniform wall ({var:.0f}% variation)",
             description=(
-                f"Wall thickness varies from {ta.min_thickness:.2f}mm to "
-                f"{ta.max_thickness:.2f}mm (mean: {ta.mean_thickness:.2f}mm, "
-                f"variation: {variation:.0f}%). Non-uniform walls cause "
-                f"differential shrinkage, warpage, and sink marks."
+                f"Major-surface thickness ranges from {min_t:.2f} to {max_t:.2f} mm "
+                f"(mean {mean_t:.2f} mm). Differential shrinkage causes warpage."
             ),
-            suggestion=(
-                f"Aim for uniform wall thickness within ±10% of nominal. "
-                f"Use gradual transitions (3:1 taper ratio) where thickness "
-                f"changes are necessary. Core out thick sections."
-            ),
-            measured_value=variation,
-            threshold_value=self.VARIATION_WARNING_PCT,
+            suggestion="Aim for ±10% of nominal. Use gradual 3:1 taper transitions.",
+            measured_value=var,
+            threshold_value=T.WALL_VARIATION_WARNING_PCT,
             unit="%",
         ))
+        return issues
+
+
+class WallTransitionRule(DfmRule):
+    """Detect abrupt thick-to-thin transitions between major surfaces."""
+    rule_id = "wall_transition"
+    name = "Thickness Transitions"
+    category = Category.THICKNESS
+    weight = 1.0
+
+    def evaluate(self, context: AnalysisContext) -> list[DfmIssue]:
+        issues = []
+        ta = context.thickness_analysis
+        if ta is None or len(ta.samples) < 5:
+            return issues
+
+        wall_faces = _wall_face_indices(context)
+        samples = [s for s in ta.samples if s.face_index in wall_faces]
+        if len(samples) < 5:
+            return issues
+
+        # Per-face average thickness (major surfaces only)
+        face_samples = defaultdict(list)
+        for s in samples:
+            face_samples[s.face_index].append(s.thickness)
+
+        if len(face_samples) < 2:
+            return issues
+
+        import numpy as np
+        all_t = [s.thickness for s in samples]
+        nominal = float(np.mean(all_t))
+        if nominal == 0:
+            return issues
+
+        transition_faces = []
+        for fidx, thicknesses in face_samples.items():
+            avg = sum(thicknesses) / len(thicknesses)
+            ratio = max(avg / nominal, nominal / avg)
+            if ratio > T.WALL_TRANSITION_RATIO:
+                transition_faces.append(fidx)
+
+        if transition_faces:
+            issues.append(DfmIssue(
+                rule_id=self.rule_id,
+                severity=Severity.WARNING,
+                category=self.category,
+                title=f"Abrupt thickness transition ({len(transition_faces)} region(s))",
+                description=(
+                    f"{len(transition_faces)} major surface(s) have local thickness "
+                    f"> {T.WALL_TRANSITION_RATIO:.0f}× the nominal {nominal:.2f} mm."
+                ),
+                suggestion="Use gradual tapers (3:1 ratio) between thick and thin sections.",
+                affected_faces=sorted(transition_faces),
+                measured_value=T.WALL_TRANSITION_RATIO,
+                threshold_value=T.WALL_TRANSITION_RATIO,
+                unit="×",
+            ))
 
         return issues

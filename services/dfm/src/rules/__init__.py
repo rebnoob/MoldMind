@@ -1,15 +1,20 @@
-from .base import DfmRule, DfmIssue, Severity, Category
+from .base import DfmRule, DfmIssue, Severity, Category, AnalysisContext, MaterialParams
 from .draft_angle import DraftAngleRule
-from .wall_thickness import WallThicknessRule, WallUniformityRule
+from .wall_thickness import WallThicknessRule, WallUniformityRule, WallTransitionRule
 from .undercuts import UndercutRule
-from .sharp_corners import SharpCornerRule
+from .radii_transitions import RadiiTransitionsRule
+from .parting_line import PartingLineRule
+from .ribs_bosses import RibsBossesRule
 
 ALL_RULES: list[type[DfmRule]] = [
     DraftAngleRule,
     WallThicknessRule,
     WallUniformityRule,
+    WallTransitionRule,
     UndercutRule,
-    SharpCornerRule,
+    RadiiTransitionsRule,
+    PartingLineRule,
+    RibsBossesRule,
 ]
 
-__all__ = ["DfmRule", "DfmIssue", "Severity", "Category", "ALL_RULES"]
+__all__ = ["DfmRule", "DfmIssue", "Severity", "Category", "AnalysisContext", "MaterialParams", "ALL_RULES"]

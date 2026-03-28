@@ -3,18 +3,19 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # Database
-    database_url: str = "postgresql+asyncpg://moldmind:moldmind_dev@localhost:5432/moldmind"
+    # Database — defaults to SQLite for zero-dep local dev
+    database_url: str = "sqlite+aiosqlite:///./moldmind.db"
 
-    # Redis
+    # Redis (optional in dev — workers won't run without it)
     redis_url: str = "redis://localhost:6379/0"
 
-    # Object Storage
+    # Object Storage — falls back to local filesystem in dev
     s3_endpoint: str = "http://localhost:9000"
     s3_access_key: str = "moldmind"
     s3_secret_key: str = "moldmind_dev"
     s3_bucket: str = "moldmind-files"
     s3_region: str = "us-east-1"
+    use_local_storage: bool = True  # Use local filesystem instead of S3
 
     # Auth
     jwt_secret: str = "dev-secret-change-in-production"

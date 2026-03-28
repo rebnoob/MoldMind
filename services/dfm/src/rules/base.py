@@ -24,6 +24,8 @@ class Category(str, Enum):
     THICKNESS = "thickness"
     UNDERCUT = "undercut"
     GEOMETRY = "geometry"
+    PARTING = "parting"
+    RIB_BOSS = "rib_boss"
     GATE = "gate"
     EJECTION = "ejection"
     COOLING = "cooling"

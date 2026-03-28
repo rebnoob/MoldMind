@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.config import get_settings
 from .core.storage import ensure_bucket
+from .core.database import init_db
 from .routes import auth, parts, projects, analysis, jobs
 
 settings = get_settings()
@@ -13,6 +15,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    await init_db()
     ensure_bucket()
     yield
     # Shutdown
@@ -43,3 +46,15 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/api/files/{path:path}")
+async def serve_file(path: str):
+    """Serve files from local storage (dev mode). In prod, use S3 presigned URLs."""
+    from .core.storage import download_file
+    try:
+        data = download_file(path)
+        content_type = "model/gltf-binary" if path.endswith(".glb") else "application/octet-stream"
+        return Response(content=data, media_type=content_type)
+    except FileNotFoundError:
+        return Response(status_code=404, content="File not found")

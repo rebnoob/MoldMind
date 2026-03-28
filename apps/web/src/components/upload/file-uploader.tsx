@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 
 interface FileUploaderProps {
   onUpload: (file: File) => void;
-  state: "idle" | "uploading" | "processing" | "complete" | "error";
+  state: "idle" | "uploading" | "processing" | "complete" | "error" | string;
 }
 
 const ACCEPTED_EXTENSIONS = [".step", ".stp"];
