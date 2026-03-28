@@ -31,6 +31,10 @@ Thumbs.db
 *.glb
 *.stl
 uploads/
+apps/api/storage/
+
+# Database
+*.db
 
 # Docker
 postgres_data/
