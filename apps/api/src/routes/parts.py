@@ -37,6 +37,8 @@ class PartResponse(BaseModel):
     topology_url: str | None = None
     molding_plan_url: str | None = None
     ceramic_feasibility_url: str | None = None
+    fill_time_url: str | None = None
+    fill_time_meta_url: str | None = None
 
 
 async def _enrich_part(part: Part, db: AsyncSession) -> PartResponse:
@@ -46,6 +48,8 @@ async def _enrich_part(part: Part, db: AsyncSession) -> PartResponse:
     topology_url = None
     molding_plan_url = None
     ceramic_feasibility_url = None
+    fill_time_url = None
+    fill_time_meta_url = None
     if part.mesh_key:
         mesh_url = generate_presigned_url(part.mesh_key)
         facemap_key = part.mesh_key.replace("mesh.glb", "facemap.json")
@@ -56,6 +60,10 @@ async def _enrich_part(part: Part, db: AsyncSession) -> PartResponse:
         molding_plan_url = generate_presigned_url(plan_key)
         ceramic_key = part.mesh_key.replace("mesh.glb", "ceramic_feasibility.json")
         ceramic_feasibility_url = generate_presigned_url(ceramic_key)
+        fill_bin_key = part.mesh_key.replace("mesh.glb", "fill_time.bin")
+        fill_time_url = generate_presigned_url(fill_bin_key)
+        fill_meta_key = part.mesh_key.replace("mesh.glb", "fill_time.json")
+        fill_time_meta_url = generate_presigned_url(fill_meta_key)
 
     return PartResponse(
         id=part.id,
@@ -76,6 +84,8 @@ async def _enrich_part(part: Part, db: AsyncSession) -> PartResponse:
         topology_url=topology_url,
         molding_plan_url=molding_plan_url,
         ceramic_feasibility_url=ceramic_feasibility_url,
+        fill_time_url=fill_time_url,
+        fill_time_meta_url=fill_time_meta_url,
     )
 
 

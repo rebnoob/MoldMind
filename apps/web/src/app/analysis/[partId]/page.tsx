@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PartViewer } from "@/components/viewer/part-viewer";
+import { FillTimeViewer, FlowSimControls } from "@/components/viewer/fill-time-viewer";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -42,6 +43,7 @@ interface PartInfo {
   mesh_url: string | null; facemap_url: string | null;
   topology_url: string | null; molding_plan_url: string | null;
   ceramic_feasibility_url: string | null;
+  fill_time_url: string | null; fill_time_meta_url: string | null;
 }
 
 // --- Shared UI ---
@@ -222,9 +224,10 @@ export default function AnalysisPage() {
   const [part, setPart] = useState<PartInfo|null>(null);
   const [plan, setPlan] = useState<any>(null);
   const [ceramic, setCeramic] = useState<any>(null);
+  const [fillMeta, setFillMeta] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [mat, setMat] = useState("ABS");
-  const [tab, setTab] = useState<"molding"|"ceramic">("molding");
+  const [tab, setTab] = useState<"molding"|"ceramic"|"flow">("molding");
   const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const token = typeof window!=="undefined"?localStorage.getItem("token"):null;
 
@@ -236,6 +239,7 @@ export default function AnalysisPage() {
     const fetchData = async (p: any) => {
       if (p.molding_plan_url) try { const r = await fetch(`${API_URL}${p.molding_plan_url}`); if(r.ok){const d=await r.json();setPlan(d);if(d.material?.primary?.family&&MATERIAL_DB[d.material.primary.family])setMat(d.material.primary.family);} } catch{}
       if (p.ceramic_feasibility_url) try { const r = await fetch(`${API_URL}${p.ceramic_feasibility_url}`); if(r.ok){setCeramic(await r.json());} } catch{}
+      if (p.fill_time_meta_url) try { const r = await fetch(`${API_URL}${p.fill_time_meta_url}`); if(r.ok){setFillMeta(await r.json());} } catch{}
     };
     const init = async () => {
       const p = await fetchPart();
@@ -262,19 +266,38 @@ export default function AnalysisPage() {
       {isP&&<div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center gap-3"><div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"/><p className="text-sm font-medium text-blue-900">Analyzing geometry...</p></div>}
       {part.status==="error"&&<div className="bg-red-50 border-b border-red-200 px-4 py-3"><p className="text-sm font-medium text-red-900">Analysis failed</p>{part.error_message&&<p className="text-xs text-red-700">{part.error_message}</p>}</div>}
       <div className="flex-1 flex min-h-0">
-        <div className="flex-1 relative"><PartViewer meshUrl={part.mesh_url?`${API_URL}${part.mesh_url}`:null} facemapUrl={part.facemap_url?`${API_URL}${part.facemap_url}`:null} topologyUrl={part.topology_url?`${API_URL}${part.topology_url}`:null}/></div>
+        <div className="flex-1 relative">
+          {tab==="flow" && part.mesh_url && part.fill_time_url && fillMeta ? (
+            <FillTimeViewer
+              meshUrl={`${API_URL}${part.mesh_url}`}
+              fillTimeUrl={`${API_URL}${part.fill_time_url}`}
+              meta={fillMeta}
+              partId={partId}
+            />
+          ) : (
+            <PartViewer
+              meshUrl={part.mesh_url?`${API_URL}${part.mesh_url}`:null}
+              facemapUrl={part.facemap_url?`${API_URL}${part.facemap_url}`:null}
+              topologyUrl={part.topology_url?`${API_URL}${part.topology_url}`:null}
+            />
+          )}
+        </div>
         <div className="w-[420px] border-l border-gray-200 flex flex-col">
           {/* Tabs */}
           <div className="flex border-b border-gray-200 shrink-0">
-            <button onClick={()=>setTab("molding")} className={`flex-1 px-3 py-2 text-xs font-medium ${tab==="molding"?"text-brand-600 border-b-2 border-brand-600 bg-white":"text-gray-500 hover:text-gray-700"}`}>Molding Plan</button>
+            <button onClick={()=>setTab("molding")} className={`flex-1 px-3 py-2 text-xs font-medium ${tab==="molding"?"text-brand-600 border-b-2 border-brand-600 bg-white":"text-gray-500 hover:text-gray-700"}`}>Molding</button>
+            <button onClick={()=>setTab("flow")} className={`flex-1 px-3 py-2 text-xs font-medium ${tab==="flow"?"text-brand-600 border-b-2 border-brand-600 bg-white":"text-gray-500 hover:text-gray-700"}`}>
+              Flow Sim
+            </button>
             <button onClick={()=>setTab("ceramic")} className={`flex-1 px-3 py-2 text-xs font-medium ${tab==="ceramic"?"text-brand-600 border-b-2 border-brand-600 bg-white":"text-gray-500 hover:text-gray-700"}`}>
-              Ceramic Insert
+              Ceramic
               {ceramic && <span className={`ml-1.5 text-[9px] px-1 rounded ${ceramic.rating==="GO"?"bg-green-100 text-green-700":ceramic.rating==="CAUTION"?"bg-amber-100 text-amber-700":"bg-red-100 text-red-700"}`}>{ceramic.rating}</span>}
             </button>
           </div>
           {/* Panel content */}
           <div className="flex-1 overflow-y-auto">
             {tab==="molding" && (plan ? <MoldingPanel plan={plan} mat={mat} onMat={setMat}/> : isP ? <div className="p-8 text-center"><div className="animate-spin h-6 w-6 border-2 border-gray-300 border-t-brand-600 rounded-full mx-auto mb-3"/><p className="text-sm text-gray-500">Generating...</p></div> : <div className="p-8 text-center"><p className="text-sm text-gray-500">No data.</p></div>)}
+            {tab==="flow" && (fillMeta ? <FlowSimControls partId={partId}/> : isP ? <div className="p-8 text-center"><div className="animate-spin h-6 w-6 border-2 border-gray-300 border-t-brand-600 rounded-full mx-auto mb-3"/><p className="text-sm text-gray-500">Computing fill time...</p></div> : <div className="p-8 text-center"><p className="text-sm text-gray-500">No simulation available.</p></div>)}
             {tab==="ceramic" && (ceramic ? <CeramicPanel data={ceramic}/> : isP ? <div className="p-8 text-center"><div className="animate-spin h-6 w-6 border-2 border-gray-300 border-t-brand-600 rounded-full mx-auto mb-3"/><p className="text-sm text-gray-500">Analyzing...</p></div> : <div className="p-8 text-center"><p className="text-sm text-gray-500">No data.</p></div>)}
           </div>
         </div>

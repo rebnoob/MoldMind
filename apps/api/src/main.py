@@ -54,7 +54,16 @@ async def serve_file(path: str):
     from .core.storage import download_file
     try:
         data = download_file(path)
-        content_type = "model/gltf-binary" if path.endswith(".glb") else "application/octet-stream"
+        if path.endswith(".glb"):
+            content_type = "model/gltf-binary"
+        elif path.endswith(".gif"):
+            content_type = "image/gif"
+        elif path.endswith(".json"):
+            content_type = "application/json"
+        elif path.endswith(".png"):
+            content_type = "image/png"
+        else:
+            content_type = "application/octet-stream"
         return Response(content=data, media_type=content_type)
     except FileNotFoundError:
         return Response(status_code=404, content="File not found")

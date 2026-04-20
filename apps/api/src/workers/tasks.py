@@ -108,6 +108,32 @@ async def process_geometry_and_analyze(job_id: str, part_id: str, pull_direction
             job.progress = 50
             await session.commit()
 
+            # Step 4b: 3D fill-time field (voxel + fast-marching)
+            def _compute_fill_time(verts, idx):
+                from services.simulation.src.fill_time import compute_fill_time
+                return compute_fill_time(verts, idx, gate="top_z", max_grid=96)
+
+            try:
+                fill_result = await loop.run_in_executor(
+                    None, _compute_fill_time,
+                    mesh_data["vertices"], mesh_data.get("indices"),
+                )
+                fill_bin_key = f"parts/{part_id}/fill_time.bin"
+                fill_meta_key = f"parts/{part_id}/fill_time.json"
+                upload_file(fill_bin_key, fill_result["vertex_fill_time"].tobytes(), "application/octet-stream")
+                meta = {k: v for k, v in fill_result.items() if k != "vertex_fill_time"}
+                upload_file(fill_meta_key, _json.dumps(meta).encode(), "application/json")
+                logger.info(
+                    f"Stored fill_time: {fill_result['vertex_count']} verts, "
+                    f"max={fill_result['max_time']:.1f}mm, "
+                    f"grid={fill_result['voxel_grid']}"
+                )
+            except Exception as e:
+                logger.warning(f"Fill-time computation failed (continuing): {e}", exc_info=True)
+
+            job.progress = 55
+            await session.commit()
+
             # Step 5: Run geometry analysis, topology extraction, and molding plan
             logger.info("Running analysis...")
 
@@ -163,6 +189,9 @@ async def process_geometry_and_analyze(job_id: str, part_id: str, pull_direction
             ceramic_key = f"parts/{part_id}/ceramic_feasibility.json"
             upload_file(ceramic_key, _json.dumps(ceramic).encode(), "application/json")
             logger.info(f"Ceramic feasibility: {ceramic['rating']}")
+
+            job.progress = 92
+            await session.commit()
 
             job.status = "completed"
             job.progress = 100

@@ -11,12 +11,26 @@ MoldMind is a manufacturing intelligence platform for injection mold DFM (Design
 - **DFM Engine**: Rule-based at `services/dfm/` — draft angle, wall thickness, undercuts, sharp corners
 
 ## Running the App
-```bash
-cd /Users/rebnoob/Desktop/Claude/moldmind/apps/api
-PYTHONPATH=/Users/rebnoob/Desktop/Claude/moldmind uvicorn src.main:app --host 0.0.0.0 --port 8000 --log-level info
 
-cd /Users/rebnoob/Desktop/Claude/moldmind/apps/web
+Backend runs from the `moldmind` conda env (contains pythonocc-core 7.9.3 + scipy/matplotlib for the Hele-Shaw simulator). The `apps/api/venv/` is stale — do NOT use it.
+
+```bash
+# API (conda env "moldmind")
+cd /Users/xiaoxizhou/Downloads/Molding/MoldMind/apps/api
+PYTHONPATH=/Users/xiaoxizhou/Downloads/Molding/MoldMind \
+  conda run --no-capture-output -n moldmind \
+  uvicorn src.main:app --host 0.0.0.0 --port 8000 --log-level info
+
+# Web
+cd /Users/xiaoxizhou/Downloads/Molding/MoldMind/apps/web
 pnpm dev
+```
+
+First-time env setup (already done on this machine):
+```bash
+conda create -n moldmind --override-channels -c conda-forge -y python=3.11 pythonocc-core=7.9.3
+conda run -n moldmind pip install -r apps/api/requirements.txt
+conda run -n moldmind pip install scipy matplotlib pillow
 ```
 - Frontend: http://localhost:3000
 - API: http://localhost:8000

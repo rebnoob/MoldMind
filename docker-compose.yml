@@ -86,6 +86,35 @@ services:
       - ./apps/api/src:/app/src
       - ./services:/app/services
 
+  # OpenFOAM container — long-running, we `docker exec` into it from the API to
+  # run blockMesh / snappyHexMesh / interFoam on case directories mounted below.
+  # The availability probe in services/simulation/src/openfoam_runner.py matches
+  # any container whose name contains "openfoam" (compose names it like
+  # "moldmind-openfoam-1" which matches).
+  openfoam:
+    image: opencfd/openfoam-default:2312
+    # Keep it idling so we can docker exec into it on demand.
+    command: ["bash", "-lc", "source /usr/lib/openfoam/openfoam2312/etc/bashrc && echo OpenFOAM ready && tail -f /dev/null"]
+    # ESI-OpenCFD publishes multi-arch images for 2312; on Apple Silicon we rely
+    # on the arm64 manifest. If your host is an older ARM Mac without arm64
+    # support, uncomment the next line to force amd64 (runs under Rosetta/QEMU).
+    # platform: linux/amd64
+    working_dir: /cases
+    volumes:
+      - ./openfoam_cases:/cases
+      - ./services/simulation/openfoam_templates:/templates:ro
+    # Healthcheck: source the bashrc and confirm blockMesh is on PATH.
+    # (foamVersion binary isn't shipped in opencfd/openfoam-default:2312.)
+    healthcheck:
+      test: ["CMD-SHELL", "source /usr/lib/openfoam/openfoam2312/etc/bashrc && command -v blockMesh > /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # interFoam is CPU-hungry. Omitting cpus/cpuset lets the container use all
+    # host cores. Cap memory so a runaway solve doesn't thrash the host.
+    mem_limit: "8g"
+
 volumes:
   postgres_data:
   minio_data:

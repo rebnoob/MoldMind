@@ -1,0 +1,75 @@
+#!/bin/bash
+# Smoke test: create a 0.05 m unit cube with blockMesh, confirm a solver binary
+# exists, print versions. Used by the API to verify the container is healthy
+# without running a real simulation.
+
+# Source the bashrc BEFORE strict mode — OpenFOAM's bashrc touches many unset vars.
+set +u
+source /usr/lib/openfoam/openfoam2312/etc/bashrc
+set -euo pipefail
+cd "$(dirname "$0")"
+
+echo "=== OpenFOAM version ==="
+echo "OpenFOAM ${WM_PROJECT_VERSION:-unknown}  (arch: ${WM_ARCH_OPTION:-?}${WM_COMPILER:-?}${WM_PRECISION_OPTION:-?}${WM_LABEL_SIZE:-?})"
+
+echo ""
+echo "=== Solver availability ==="
+for s in blockMesh snappyHexMesh interFoam checkMesh; do
+  if command -v "$s" >/dev/null 2>&1; then
+    echo "  [ok]   $s → $(command -v $s)"
+  else
+    echo "  [FAIL] $s not found"
+    exit 1
+  fi
+done
+
+echo ""
+echo "=== blockMesh smoke run on unit cube ==="
+TMPDIR=$(mktemp -d)
+cd "$TMPDIR"
+mkdir -p system constant/polyMesh
+
+cat > system/controlDict <<'EOF'
+FoamFile { version 2.0; format ascii; class dictionary; object controlDict; }
+application     interFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         0;
+deltaT          1;
+writeControl    timeStep;
+writeInterval   1;
+EOF
+
+cat > system/blockMeshDict <<'EOF'
+FoamFile { version 2.0; format ascii; class dictionary; object blockMeshDict; }
+scale 0.001;
+vertices ( (0 0 0) (50 0 0) (50 50 0) (0 50 0) (0 0 50) (50 0 50) (50 50 50) (0 50 50) );
+blocks ( hex (0 1 2 3 4 5 6 7) (10 10 10) simpleGrading (1 1 1) );
+edges ();
+boundary (
+  walls { type wall; faces ( (0 4 7 3) (2 6 5 1) (1 5 4 0) (3 7 6 2) (0 3 2 1) (4 5 6 7) ); }
+);
+mergePatchPairs ();
+EOF
+
+cat > system/fvSchemes <<'EOF'
+FoamFile { version 2.0; format ascii; class dictionary; object fvSchemes; }
+ddtSchemes      { default steadyState; }
+gradSchemes     { default Gauss linear; }
+divSchemes      { default none; }
+laplacianSchemes{ default Gauss linear corrected; }
+interpolationSchemes { default linear; }
+snGradSchemes   { default corrected; }
+EOF
+
+cat > system/fvSolution <<'EOF'
+FoamFile { version 2.0; format ascii; class dictionary; object fvSolution; }
+solvers { p { solver PCG; preconditioner DIC; tolerance 1e-6; relTol 0.05; } }
+EOF
+
+blockMesh -case . > blockMesh.log 2>&1 && echo "  blockMesh OK ($(grep -c 'faces' blockMesh.log) face lines)"
+checkMesh -case . > checkMesh.log 2>&1 && echo "  checkMesh OK"
+
+echo ""
+echo "=== All smoke checks passed ==="

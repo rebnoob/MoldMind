@@ -10,6 +10,7 @@ venv/
 .next/
 dist/
 .turbo/
+tsconfig.tsbuildinfo
 
 # Environment
 .env
@@ -39,3 +40,7 @@ apps/api/storage/
 # Docker
 postgres_data/
 minio_data/
+
+# OpenFOAM case outputs (generated per-part, can be huge)
+openfoam_cases/*
+!openfoam_cases/.gitkeep
