@@ -109,9 +109,12 @@ async def process_geometry_and_analyze(job_id: str, part_id: str, pull_direction
             await session.commit()
 
             # Step 4b: 3D fill-time field (voxel + fast-marching)
+            # Default gate is the centre of the XY plane (the phone-case back cover).
+            # See llm_wiki_for_physics/wiki/concepts/gate_optimization.md
+            # Users can re-rank via /api/analysis/simulation/gate/optimize/{part_id}.
             def _compute_fill_time(verts, idx):
                 from services.simulation.src.fill_time import compute_fill_time
-                return compute_fill_time(verts, idx, gate="top_z", max_grid=96)
+                return compute_fill_time(verts, idx, gate="xy_center", max_grid=96)
 
             try:
                 fill_result = await loop.run_in_executor(

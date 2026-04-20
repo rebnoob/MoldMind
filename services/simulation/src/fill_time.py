@@ -121,24 +121,52 @@ def compute_fill_time(
     logger.info(f"Voxel grid {matrix.shape}, {active} active ({100*matrix.mean():.1f}%)")
 
     # ── Pick gate ──
+    # Modes:
+    #   "top_x/y/z"    — topmost face along that axis, centroid in the other two
+    #   "xy_center"    — centre of the XY plane, dropped onto the top Z surface
+    #                    (default for phone-case-like parts whose largest face is on XY)
+    #   "xz_center"    — centre of the XZ plane, on the top Y surface
+    #   "yz_center"    — centre of the YZ plane, on the top X surface
+    #   (x, y, z)      — explicit world-mm coordinate
+    # See wiki/concepts/gate_optimization.md for the full rationale.
     filled_idx = np.argwhere(matrix)  # (M, 3) integer indices
     if isinstance(gate, str):
-        if gate == "top_z":
-            axis = 2
-        elif gate == "top_y":
-            axis = 1
-        elif gate == "top_x":
-            axis = 0
+        if gate in ("top_z", "top_y", "top_x"):
+            axis = {"top_x": 0, "top_y": 1, "top_z": 2}[gate]
+            top_k = int(filled_idx[:, axis].max())
+            at_top = filled_idx[filled_idx[:, axis] == top_k]
+            gate_idx = tuple(int(x) for x in np.round(at_top.mean(axis=0)).astype(int))
+            if not matrix[gate_idx]:
+                diffs = at_top - np.array(gate_idx)
+                nearest = at_top[np.argmin(np.sum(diffs ** 2, axis=1))]
+                gate_idx = tuple(int(x) for x in nearest)
+        elif gate in ("xy_center", "xz_center", "yz_center"):
+            # Axis perpendicular to the "face" named in the mode.
+            # xy_center → project onto the Z = max face → axis = 2
+            drop_axis = {"xy_center": 2, "xz_center": 1, "yz_center": 0}[gate]
+            plane_axes = [a for a in (0, 1, 2) if a != drop_axis]
+            # Geometric centre of the filled voxels in the two in-plane axes
+            centre_ij = np.round(filled_idx[:, plane_axes].mean(axis=0)).astype(int)
+            top_k = int(filled_idx[:, drop_axis].max())
+            gate_idx_arr = np.zeros(3, dtype=int)
+            gate_idx_arr[plane_axes[0]] = int(centre_ij[0])
+            gate_idx_arr[plane_axes[1]] = int(centre_ij[1])
+            gate_idx_arr[drop_axis] = top_k
+            gate_idx = tuple(int(c) for c in gate_idx_arr)
+            # Snap to the nearest filled voxel on that top face (or anywhere if the
+            # projection happens to fall outside the solid — e.g. a C-shaped part).
+            if not matrix[gate_idx]:
+                at_top = filled_idx[filled_idx[:, drop_axis] == top_k]
+                if len(at_top) == 0:
+                    at_top = filled_idx
+                diffs = at_top - np.array(gate_idx)
+                nearest = at_top[np.argmin(np.sum(diffs ** 2, axis=1))]
+                gate_idx = tuple(int(x) for x in nearest)
         else:
-            raise ValueError(f"Unknown gate mode: {gate}")
-        top_k = int(filled_idx[:, axis].max())
-        at_top = filled_idx[filled_idx[:, axis] == top_k]
-        gate_idx = tuple(int(x) for x in np.round(at_top.mean(axis=0)).astype(int))
-        # Snap to an actual filled voxel near that centroid
-        if not matrix[gate_idx]:
-            diffs = at_top - np.array(gate_idx)
-            nearest = at_top[np.argmin(np.sum(diffs ** 2, axis=1))]
-            gate_idx = tuple(int(x) for x in nearest)
+            raise ValueError(
+                f"Unknown gate mode: {gate!r}. "
+                "Expected one of: top_x, top_y, top_z, xy_center, xz_center, yz_center, or (x,y,z) tuple."
+            )
     else:
         gx, gy, gz = gate
         gate_idx = tuple(int(x) for x in np.floor((np.array([gx, gy, gz]) - origin) / pitch_mm))

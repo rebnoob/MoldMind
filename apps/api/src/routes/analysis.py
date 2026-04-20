@@ -97,6 +97,57 @@ async def select_solver_for_part(
     return select_solver(features)
 
 
+@router.get("/simulation/gate/optimize/{part_id}")
+async def optimize_gate_for_part(
+    part_id: UUID,
+    strategy: str = "symmetric_centers",
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rank candidate gate positions for a part.
+
+    strategy:
+      - "symmetric_centers" (3 candidates on XY/XZ/YZ plane centres — fastest)
+      - "com_axes" (9 candidates along axis-parallel lines through the centre of mass)
+      - "exhaustive_xy_grid" (25 candidates on a 5x5 grid on the top XY face — ~30 s)
+
+    See llm_wiki_for_physics/wiki/concepts/gate_optimization.md for the rationale.
+    """
+    import asyncio, os, tempfile
+    from ..core.storage import download_file
+
+    r = await db.execute(select(Part).where(Part.id == part_id, Part.user_id == current_user.user_id))
+    part = r.scalar_one_or_none()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part not found")
+    if strategy not in ("symmetric_centers", "com_axes", "exhaustive_xy_grid"):
+        raise HTTPException(status_code=400, detail=f"Unknown strategy: {strategy}")
+
+    def _run():
+        from services.geometry.src.step_parser import parse_step_file
+        from services.geometry.src.tessellator import tessellate_shape
+        from services.simulation.src.gate_optimizer import optimize_gate
+        step_bytes = download_file(part.file_key)
+        with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
+            f.write(step_bytes)
+            tmp = f.name
+        try:
+            shape = parse_step_file(tmp)
+            mesh = tessellate_shape(shape)
+            return optimize_gate(
+                mesh["vertices"], mesh.get("indices"),
+                strategy=strategy, max_grid=64,
+            )
+        finally:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _run)
+
+
 @router.post("/simulation/openfoam/prepare/{part_id}")
 async def openfoam_prepare_case(
     part_id: UUID,
