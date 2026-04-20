@@ -45,8 +45,8 @@ minio_data/
 openfoam_cases/*
 !openfoam_cases/.gitkeep
 
-# Physics-wiki raw sources (PDFs, git repos, STEP/STL files — 1.9 GB)
-llm_wiki_for_physics/lexie_test_raw/
+# Physics wiki (kept local only — raw sources are 1.9 GB and wiki is personal notes)
+llm_wiki_for_physics/
 
 # Local test STEP bundle (39 MB of binary CAD — too heavy for the repo)
 test_model/
